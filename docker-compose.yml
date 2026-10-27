@@ -1,0 +1,30 @@
+# Shared edge nginx for the VPS. Routes by subdomain to each app over the
+# external `edge` network. TLS is terminated upstream (network team), so this
+# only speaks HTTP on port 80.
+#
+# Usage:
+#   docker network create edge        # once per machine
+#   docker compose up -d
+#
+# Local testing: copy .env.example to .env (see README.md).
+
+services:
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "${EDGE_PORT:-80}:80"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/snippets:/etc/nginx/snippets:ro
+      - ./brand:/etc/nginx/brand:ro
+      # Maintenance flag + page of each app. The app's own deploy workflow
+      # creates/removes `on` inside its folder.
+      - ${EMPRESAS_DIR:-/opt/ssc-empresas-privadas}/nginx/maintenance:/etc/nginx/maintenance/empresas:ro
+      - ${COMERCIOSEGURO_DIR:-/opt/comercio-seguro-ssc-cancun}/nginx/maintenance:/etc/nginx/maintenance/comercioseguro:ro
+    networks:
+      - edge
+
+networks:
+  edge:
+    external: true

@@ -1,0 +1,49 @@
+name: Deploy Edge Proxy
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: edge-proxy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, X64]
+
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: /opt/ssc-edge-proxy
+
+    steps:
+      - name: Update repository
+        run: |
+          git fetch origin
+          git checkout main
+          git pull --ff-only origin main
+
+      - name: Ensure shared edge network
+        run: docker network inspect edge >/dev/null 2>&1 || docker network create edge
+
+      - name: Start nginx
+        run: docker compose up -d
+
+      # If the config is invalid this step fails and nginx keeps serving the
+      # previous config (no reload happens).
+      - name: Validate nginx config
+        run: docker compose exec -T nginx nginx -t
+
+      - name: Reload nginx
+        run: docker compose exec -T nginx nginx -s reload
+
+      - name: Show status
+        if: always()
+        run: docker compose ps
+
+      - name: Show logs if deployment failed
+        if: failure()
+        run: docker compose logs --tail=100
