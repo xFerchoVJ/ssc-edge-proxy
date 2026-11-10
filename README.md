@@ -1,14 +1,19 @@
 # ssc-edge-proxy
 
-nginx compartido del VPS. Es el único servicio que publica el puerto 80; enruta
-por subdominio a cada sistema a través de la red Docker externa `edge`.
-El TLS lo termina redes antes del VPS, así que aquí todo es HTTP.
+nginx compartido del VPS. Es el único servicio que publica puertos (80 y 8080,
+ambos al mismo nginx); enruta por subdominio a cada sistema a través de la red
+Docker externa `edge`. El TLS lo termina redes antes del VPS, así que aquí todo es HTTP.
 
 ```
-redes (HTTPS) → VPS:80 → ssc-edge-proxy (nginx)
+redes FortiWeb (HTTPS) → VPS:80   ─┐
+redes FortiWeb (HTTPS) → VPS:8080 ─┴→ ssc-edge-proxy (nginx)
                           ├─ empresas.sscqroo.gob.mx       → empresas-app:80
                           └─ comercioseguro.sscqroo.gob.mx → comercioseguro-web:3000
 ```
+
+Redes apunta cada sistema a un puerto distinto del VPS (empresas → `:80`,
+comercioseguro → `:8080`) para que sus reglas de FortiWeb no choquen al agregar SSL.
+El ruteo sigue siendo por header `Host`, no por puerto.
 
 ## Estructura
 
@@ -53,7 +58,7 @@ falla antes del reload y nginx sigue con la anterior.
 3. Clonar en `/opt/ssc-edge-proxy`.
 4. Si empresas aún corre con su nginx propio: desplegar empresas (su `app` se une a `edge`), luego `docker rm -f ssc-empresas-privadas-nginx-1` (hay unos segundos sin servicio) y `docker compose up -d` aquí.
 5. Desplegar Cancún en `/opt/comercio-seguro-ssc-cancun` (primer `up -d --build` a mano).
-6. Verificar: `curl -H 'Host: empresas.sscqroo.gob.mx' localhost/up` y lo mismo con `comercioseguro...` → 200.
+6. Verificar: `curl -H 'Host: empresas.sscqroo.gob.mx' localhost/up` y `curl -H 'Host: comercioseguro.sscqroo.gob.mx' localhost:8080/up` → 200.
 
 ## Probar en local (Mac)
 
@@ -68,19 +73,19 @@ docker compose --env-file .env.production -f docker-compose.production.yml up -d
 
 # 2. El edge
 cd ../ssc-edge-proxy
-cp .env.example .env        # EDGE_PORT=8080 y rutas relativas a los repos
+cp .env.example .env        # EDGE_PORT=8081, EDGE_PORT_ALT=8082 y rutas relativas a los repos
 docker compose up -d
 docker compose exec nginx nginx -t
 ```
 
-Abrir `http://empresas.localhost:8080` y `http://comercioseguro.localhost:8080`
+Abrir `http://empresas.localhost:8081` y `http://comercioseguro.localhost:8081`
 (los navegadores resuelven `*.localhost` a 127.0.0.1 sin tocar `/etc/hosts`).
 
 Pruebas:
 
 | Prueba | Esperado |
 |---|---|
-| `curl -i -H 'Host: otro.com' localhost:8080` | conexión cerrada (444) |
+| `curl -i -H 'Host: otro.com' localhost:8081` | conexión cerrada (444) |
 | `touch ../comercio-seguro-ssc-cancun/nginx/maintenance/on` | Cancún muestra mantenimiento con logos; empresas sigue normal. `rm` lo quita |
 | `docker stop scu-cancun-web-1` | Cancún 502, empresas sigue arriba. Al levantarlo vuelve sin reiniciar nginx |
 | Deploy simulado de una app | correr a mano los pasos de su `deploy.yml` |
